@@ -116,6 +116,8 @@ const GROUPS = {
     units: { speed: '0 to 1, times max_mps', kp: 'steer per m of error', kd: 'damper gain',
              speed_kp: 'throttle per m/s of error', speed_kd: 'speed error damper',
              window: 'deg', lookahead: 'm', width: 'deg', side_weight: 'm per deg' },
+    // shown instead of the yaml key; the key itself stays speed_kp/speed_kd
+    labels: { speed_kp: 'speed control kp', speed_kd: 'speed control kd' },
     // spinner arrows step the hundredths
     steps: { kp: '0.01', kd: '0.01', speed_kp: '0.01', speed_kd: '0.01', side_weight: '0.01' },
   },
@@ -168,7 +170,7 @@ function buildForm(params) {
          <input id="in_${g}_speed" type="range" min="0" max="1" step="0.01" value="${params[g].speed}"
           oninput="document.getElementById('${g}speedval').textContent = this.value;
                    post('/params', {${g}: {speed: parseFloat(this.value)}})"></label>`
-      : `<label>${f} (${spec.units[f]})<input id="in_${g}_${f}" type="number" step="${spec.steps[f] || 'any'}" value="${params[g][f]}"></label>`
+      : `<label>${(spec.labels || {})[f] || f} (${spec.units[f]})<input id="in_${g}_${f}" type="number" step="${spec.steps[f] || 'any'}" value="${params[g][f]}"></label>`
     ).join('');
   }
   document.getElementById('in_target_hold').value = params.target_hold;
