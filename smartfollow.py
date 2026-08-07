@@ -6,8 +6,9 @@ on port 8085, and the two controllers are those dashboards' code unchanged:
 
   wall following: the wallfollow dynamic gap follower on /scan. Steer toward
       the most open heading in a front arc, with obstacles inflated by the
-      car's half-width. Throttle is PD-regulated onto a target derived from
-      how much road the chosen line has.
+      car's half-width. The slider is the throttle: with speed_kp and
+      speed_kd at zero the car holds that constant command; nonzero gains
+      bend it toward a target derived from how much road the chosen line has.
   car following: the pursuit controller on the driver inference node's
       detections (vision_msgs/Detection2DArray on /edgetpu/inference). PD
       steering on the target box's horizontal offset; throttle brakes as the
@@ -184,6 +185,7 @@ class SmartFollowNode(Node):
         # wall follower
         self._last_error = 0.0
         self._last_speed_error = 0.0
+        self._trim = 0.0
         self._wall_speed_cmd = 0.0
         self._wall_steer_cmd = 0.0
         self._wall_error = 0.0
@@ -241,28 +243,32 @@ class SmartFollowNode(Node):
         self._last_error = error
         cmd = max(-1.0, min(1.0, cmd))
 
-        # Speed shaping, race_fast style: the slider is the throttle cap.
-        # Target speed in m/s comes from how much road the car actually has:
-        # the shorter of the corridor straight ahead and the corridor along
-        # the chosen line. Long corridor = straight = fast; corners shorten
-        # it and slow the car with no separate corner term. speed_kp/kd then
-        # regulate the MEASURED speed from odometry onto that target, so
-        # battery sag and surface changes are corrected instead of baked in.
-        road = min(corridor[len(degs) // 2], corridor[best])
+        # Speed, kept simple: the slider IS the throttle. With speed_kp
+        # and speed_kd at zero the car holds that constant command, exactly
+        # like rc.drive.set_speed_angle. Nonzero gains bend the throttle
+        # toward the road-shaped target using measured speed: slower into
+        # corners, corrected for battery and surface. Stale odometry just
+        # falls back to the constant command.
+        road = corridor[best]  # the chosen heading's furthest distance
         target = p['speed'] * p['max_mps'] * min(road / la, 1.0)
-        if time.monotonic() - self._enc_stamp > 0.5:
-            # No fresh measurement: never integrate blind. Stop.
+        serr = target - self._enc
+        gains_off = p['speed_kp'] == 0 and p['speed_kd'] == 0
+        odom_stale = time.monotonic() - self._enc_stamp > 0.5
+        if p['speed'] <= 1e-3:
+            self._trim = 0.0
             self._wall_speed_cmd = 0.0
-            serr = 0.0
+        elif gains_off or odom_stale:
+            self._trim = 0.0
+            self._wall_speed_cmd = p['speed']
         else:
-            serr = target - self._enc
-            saturated = (self._wall_speed_cmd >= 1.0 and serr > 0) or \
-                        (self._wall_speed_cmd <= 0.0 and serr < 0)
-            if not saturated:
-                self._wall_speed_cmd += p['speed_kp'] * serr \
+            # Never integrate up while commanded but not moving (gated).
+            blocked = self._enc < 0.05 and self._wall_speed_cmd > 0.3
+            if serr < 0 or not blocked:
+                self._trim += p['speed_kp'] * serr \
                     + p['speed_kd'] * (serr - self._last_speed_error)
+            self._trim = max(-1.0, min(0.3, self._trim))
+            self._wall_speed_cmd = max(0.0, min(1.0, p['speed'] + self._trim))
         self._last_speed_error = serr
-        self._wall_speed_cmd = max(0.0, min(1.0, self._wall_speed_cmd))
         self._wall_steer_cmd = cmd
         self._wall_error = error
 
