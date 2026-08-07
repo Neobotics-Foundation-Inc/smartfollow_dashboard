@@ -1,0 +1,4 @@
+__pycache__/
+logs/
+logs_old/
+.pytest_cache/

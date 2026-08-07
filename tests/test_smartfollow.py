@@ -1,0 +1,270 @@
+"""Controller and arbiter tests for smartfollow.py.
+
+Runs without a ROS graph: Node.__init__ and the create_* factories are
+stubbed, so the real SmartFollowNode.__init__ still sets every field and the
+callbacks are driven with hand-built messages.
+
+    source /opt/ros/humble/setup.bash
+    source /home/racecar/ros2_ws/install/setup.bash
+    pytest -q
+"""
+
+import importlib.util
+import math
+from pathlib import Path
+import sys
+import time
+
+import pytest
+from sensor_msgs.msg import LaserScan
+from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
+
+BASE = Path(__file__).resolve().parents[1]
+_spec = importlib.util.spec_from_file_location('smartfollow', BASE / 'smartfollow.py')
+sf = importlib.util.module_from_spec(_spec)
+sys.modules['smartfollow'] = sf
+_spec.loader.exec_module(sf)
+
+SHIPPED = None  # yaml as committed, restored after any test that writes it
+
+
+class Recorder:
+    """Stands in for the /drive publisher."""
+
+    def __init__(self):
+        self.msgs = []
+
+    def publish(self, msg):
+        self.msgs.append(msg)
+
+
+@pytest.fixture(autouse=True)
+def params():
+    """Fresh parameters per test; restore the file if a test saved over it."""
+    global SHIPPED
+    if SHIPPED is None:
+        SHIPPED = (BASE / 'smartfollow.yaml').read_text()
+    sf._params.clear()
+    sf._marks.clear()
+    sf._rows.clear()
+    sf._hist.clear()
+    sf.load_params()
+    yield sf._params
+    if (BASE / 'smartfollow.yaml').read_text() != SHIPPED:
+        (BASE / 'smartfollow.yaml').write_text(SHIPPED)
+
+
+@pytest.fixture
+def node(monkeypatch):
+    monkeypatch.setattr(sf.Node, '__init__', lambda self, name: None)
+    monkeypatch.setattr(sf.SmartFollowNode, 'create_publisher',
+                        lambda self, *a, **k: Recorder(), raising=False)
+    monkeypatch.setattr(sf.SmartFollowNode, 'create_subscription',
+                        lambda self, *a, **k: None, raising=False)
+    monkeypatch.setattr(sf.SmartFollowNode, 'create_timer',
+                        lambda self, *a, **k: None, raising=False)
+    n = sf.SmartFollowNode()
+    n._enc_stamp = time.monotonic()  # pretend odometry is fresh
+    return n
+
+
+def make_scan(range_at):
+    """LaserScan over 360 samples. range_at(student_deg) -> meters."""
+    msg = LaserScan()
+    msg.angle_min = -math.pi
+    msg.angle_increment = 2 * math.pi / 360
+    msg.range_min = 0.05
+    msg.range_max = 12.0
+    msg.ranges = [0.0] * 360
+    for i in range(360):
+        raw = msg.angle_min + i * msg.angle_increment
+        msg.ranges[i] = float(range_at(-math.degrees(raw)))
+    return msg
+
+
+def make_dets(boxes):
+    """boxes: list of (cx, cy, w, h, score, label)."""
+    msg = Detection2DArray()
+    for cx, cy, w, h, score, label in boxes:
+        d = Detection2D()
+        d.bbox.center.position.x = float(cx)
+        d.bbox.center.position.y = float(cy)
+        d.bbox.size_x = float(w)
+        d.bbox.size_y = float(h)
+        hyp = ObjectHypothesisWithPose()
+        hyp.hypothesis.score = float(score)
+        hyp.hypothesis.class_id = label
+        d.results.append(hyp)
+        msg.detections.append(d)
+    return msg
+
+
+# ---- parameters ----
+
+def test_speed_is_capped():
+    assert sf.set_max_speed(5.0) == sf.MAX_SPEED
+    assert sf.set_max_speed(-1.0) == 0.0
+
+
+def test_shipped_yaml_cannot_drive(params):
+    assert params['wall']['speed'] == 0.0
+    assert params['car']['speed'] == 0.0
+
+
+def test_save_keeps_comments_and_block_scoping(params):
+    params['wall']['speed_kp'] = 0.11
+    params['car']['speed_kp'] = 0.99
+    params['target_hold'] = 1.5
+    sf.save_params()
+    text = (BASE / 'smartfollow.yaml').read_text()
+    assert '# damper. Raise this if the car wobbles.' in text  # comments survive
+    sf._params.clear()
+    sf.load_params()
+    # The colliding key lands back in the block it came from.
+    assert sf._params['wall']['speed_kp'] == 0.11
+    assert sf._params['car']['speed_kp'] == 0.99
+    assert sf._params['target_hold'] == 1.5
+    assert sf._params['camera_topic'] == '/camera/color'  # non-numeric untouched
+
+
+def test_update_group_namespaces_colliding_keys(params):
+    sf._update_group('wall', sf.WALL_KEYS, {'speed': 0.3})
+    assert params['wall']['speed'] == 0.3
+    assert params['car']['speed'] == 0.0
+    changed = sf._update_group('car', sf.CAR_KEYS, {'speed': 0.4})
+    assert changed == ['car.speed 0.4']
+    assert params['wall']['speed'] == 0.3
+
+
+def test_update_group_clamps_speed(params):
+    sf._update_group('car', sf.CAR_KEYS, {'speed': 9.0})
+    assert params['car']['speed'] == sf.MAX_SPEED
+
+
+# ---- wall following ----
+
+def test_gap_follower_steers_toward_the_open_side(node):
+    node._scan_cb(make_scan(lambda deg: 3.5 if deg > 5 else 0.6))
+    assert node._wall_error > 0          # student convention: positive is right
+    assert node._wall_steer_cmd > 0
+    node._scan_cb(make_scan(lambda deg: 3.5 if deg < -5 else 0.6))
+    assert node._wall_error < 0
+
+
+def test_gap_follower_centers_in_a_symmetric_corridor(node):
+    node._scan_cb(make_scan(lambda deg: 3.5 if abs(deg) < 45 else 0.6))
+    assert abs(node._wall_error) < 0.1
+
+
+def test_gap_follower_publishes_the_overlay(node, params):
+    node._scan_cb(make_scan(lambda deg: 3.5))
+    ov = sf._state['overlay']
+    assert ov['width'] == params['wall']['width']
+    assert ov['la'] == params['wall']['lookahead']
+    assert 'target_deg' in ov
+
+
+def test_stale_odometry_zeroes_the_throttle(node, params):
+    params['wall']['speed'] = 1.0
+    node._enc_stamp = time.monotonic() - 5.0
+    node._scan_cb(make_scan(lambda deg: 3.5))
+    assert node._wall_speed_cmd == 0.0
+
+
+def test_throttle_ramps_toward_the_target_speed(node, params):
+    params['wall']['speed'] = 1.0
+    scan = make_scan(lambda deg: 3.5)
+    for _ in range(20):
+        node._enc_stamp = time.monotonic()
+        node._scan_cb(scan)
+    assert node._wall_speed_cmd > 0.0
+    assert node._wall_speed_cmd <= 1.0
+
+
+# ---- car following ----
+
+def test_largest_box_above_threshold_becomes_the_target(node):
+    node._res = (640, 480)
+    node._det_cb(make_dets([
+        (100, 240, 40, 40, 0.9, 'car'),     # high score, small
+        (500, 240, 200, 160, 0.8, 'car'),   # slightly lower score, largest
+        (320, 240, 300, 300, 0.1, 'car'),   # biggest but below threshold
+    ]))
+    assert sf._state['target']['w'] == 200
+    assert node._car_error > 0  # target is right of center
+
+
+def test_detections_below_threshold_leave_no_target(node):
+    node._res = (640, 480)
+    node._det_cb(make_dets([(320, 240, 100, 100, 0.1, 'car')]))
+    assert sf._state['target'] is None
+    assert sf._state['car_error'] is None
+
+
+def test_pursuit_holds_its_command_when_the_target_vanishes(node):
+    node._res = (640, 480)
+    node._det_cb(make_dets([(500, 240, 200, 160, 0.9, 'car')]))
+    steer, speed = node._car_steer_cmd, node._car_speed_cmd
+    node._det_cb(make_dets([]))
+    assert (node._car_steer_cmd, node._car_speed_cmd) == (steer, speed)
+
+
+def test_throttle_stops_at_the_safety_area(node, params):
+    params['car']['speed'] = 1.0
+    node._res = (640, 480)
+    # Just past the stop size, so the target speed clamps to zero.
+    big = int(math.sqrt(params['car']['safety_area'] * 640 * 480)) + 2
+    for _ in range(30):
+        node._det_cb(make_dets([(320, 240, big, big, 0.9, 'car')]))
+    assert node._car_speed_cmd == pytest.approx(0.0, abs=1e-3)
+
+
+# ---- arbiter ----
+
+def test_wall_follower_drives_when_nothing_was_ever_detected(node):
+    node._wall_steer_cmd, node._wall_speed_cmd = 0.4, 0.3
+    node._car_steer_cmd, node._car_speed_cmd = -0.9, 0.8
+    node._actuate()
+    assert sf._state['state'] == 'wall'
+    assert sf._state['since'] is None
+    msg = node._pub.msgs[-1]
+    assert msg.drive.speed == 0.3
+    assert msg.drive.steering_angle == pytest.approx(-0.4)  # negated on the wire
+
+
+def test_a_fresh_target_hands_over_to_car_following(node):
+    node._wall_steer_cmd, node._wall_speed_cmd = 0.4, 0.3
+    node._car_steer_cmd, node._car_speed_cmd = -0.9, 0.8
+    node._last_target_stamp = time.monotonic()
+    node._actuate()
+    assert sf._state['state'] == 'car'
+    msg = node._pub.msgs[-1]
+    assert msg.drive.speed == 0.8
+    assert msg.drive.steering_angle == pytest.approx(0.9)
+
+
+def test_the_wall_follower_takes_back_over_after_target_hold(node, params):
+    params['target_hold'] = 0.2
+    node._wall_steer_cmd, node._wall_speed_cmd = 0.4, 0.3
+    node._car_steer_cmd, node._car_speed_cmd = -0.9, 0.8
+    node._last_target_stamp = time.monotonic() - 0.1
+    node._actuate()
+    assert sf._state['state'] == 'car'
+    node._last_target_stamp = time.monotonic() - 0.3
+    node._actuate()
+    assert sf._state['state'] == 'wall'
+    assert node._pub.msgs[-1].drive.speed == 0.3
+
+
+def test_arbiter_output_is_capped(node, params):
+    node._wall_speed_cmd = 99.0
+    node._actuate()
+    assert node._pub.msgs[-1].drive.speed == sf.MAX_SPEED
+
+
+def test_each_row_records_the_driving_controller(node):
+    node._actuate()
+    node._last_target_stamp = time.monotonic()
+    node._actuate()
+    assert [r.strip().split(',')[-1] for r in sf._rows] == ['0', '1']
+    assert [h[2] for h in sf._hist] == [0, 1]
