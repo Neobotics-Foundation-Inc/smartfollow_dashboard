@@ -16,14 +16,24 @@
   .meta { color: rgba(245, 245, 247, 0.72); font-size: 0.85rem; margin-top: 0.2rem; }
   .meta b { color: var(--white); }
   main { padding: 1rem 1.5rem; }
-  .grid { display: grid; grid-template-columns: 500px 1fr 280px; gap: 1rem; margin-bottom: 1rem; }
-  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
-  .grid2 { display: grid; grid-template-columns: 1fr 300px; gap: 1rem; margin-bottom: 1rem; }
-  @media (max-width: 1000px) { .grid2 { grid-template-columns: 1fr; } }
-  .card { background: var(--white); border: 1px solid var(--steel); border-radius: 12px; padding: 1rem; box-shadow: 0 6px 18px rgba(29, 29, 39, 0.08); }
+  /* 592 = 560 + the card's 1rem padding either side, so a view inside one of
+     these columns lands at exactly 560 px, the width the pursuit dashboard
+     caps its camera at. Row 1: lidar, camera, then the state box and its error
+     trace over the rest of the width. Row 2 is the tune panel, full width. */
+  .grid { display: grid; grid-template-columns: 592px 592px 1fr; gap: 1rem; }
+  @media (max-width: 1400px) { .grid { grid-template-columns: 1fr; } }
+  /* The two parameter groups sit side by side so the full-width tune card
+     stays short; field order and units are untouched. */
+  .tunecols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1.5rem; }
+  @media (max-width: 700px) { .tunecols { grid-template-columns: 1fr; } }
+  .card { background: var(--white); border: 1px solid var(--steel); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; box-shadow: 0 6px 18px rgba(29, 29, 39, 0.08); }
   .card h2 { font-family: 'Space Grotesk', 'Helvetica Neue', sans-serif; font-size: 1rem; color: var(--tarmac); margin-bottom: 0.5rem; }
   .card h3 { font-family: 'Space Grotesk', 'Helvetica Neue', sans-serif; font-size: 0.85rem; color: var(--tarmac); margin-top: 0.9rem; padding-bottom: 0.2rem; border-bottom: 1px solid var(--steel); }
-  canvas { background: var(--tarmac); border-radius: 6px; width: 100%; display: block; }
+  /* height:auto keeps each canvas at its own aspect ratio instead of being
+     stretched to the column; max-width matches the pursuit dashboard, so the
+     320 px preview is never upscaled further here than it is there. */
+  canvas { background: var(--tarmac); border-radius: 6px; width: 100%; max-width: 560px; height: auto; display: block; }
+  canvas.wide { max-width: 100%; }  /* the log chart spans its whole card */
   label { display: block; color: rgba(29, 29, 39, 0.6); font-size: 0.8rem; margin-top: 0.6rem; }
   input { width: 100%; background: var(--white); border: 1px solid var(--steel); color: var(--carbon); font-family: inherit; padding: 0.3rem; border-radius: 6px; }
   input[type=range] { accent-color: var(--red); border: none; padding: 0; }
@@ -66,25 +76,27 @@
     <label>target_hold (s, keep chasing after the last detection)
       <input id="in_target_hold" type="number" step="0.1" min="0"></label>
     <button onclick="applyHold()">Apply</button>
+    <h3>Error vs setpoint (live)</h3>
+    <canvas id="chart" class="wide" width="420" height="140"></canvas>
   </div>
 </div>
 
-<div class="grid2">
-  <div class="card">
-    <h2>Error vs setpoint (live)</h2>
-    <canvas id="chart" width="560" height="380"></canvas>
+<div class="card">
+  <h2>Tune</h2>
+  <div class="tunecols">
+    <div>
+      <h3>Wall following</h3>
+      <div id="wallform"></div>
+    </div>
+    <div>
+      <h3>Car following</h3>
+      <div id="carform"></div>
+    </div>
   </div>
-  <div class="card">
-    <h2>Tune</h2>
-    <h3>Wall following</h3>
-    <div id="wallform"></div>
-    <h3>Car following</h3>
-    <div id="carform"></div>
-    <button onclick="apply()">Apply</button>
-    <button onclick="post('/save')">Save</button>
-    <button onclick="reset()">Load</button>
-    <div class="readout" id="detail"></div>
-  </div>
+  <button onclick="apply()">Apply</button>
+  <button onclick="post('/save')">Save</button>
+  <button onclick="reset()">Load</button>
+  <div class="readout" id="detail"></div>
 </div>
 
 <div class="card">
@@ -93,7 +105,7 @@
   <select id="logsel"></select>
   <button onclick="loadLog()">Load log</button>
   <span class="readout" id="loginfo"></span>
-  <canvas id="logchart" width="900" height="160"></canvas>
+  <canvas id="logchart" class="wide" width="900" height="160"></canvas>
 </div>
 
 <script>
@@ -341,9 +353,7 @@ function update() {
     document.getElementById('detail').textContent = car
       ? `target ${d.overlay.target_deg ?? '?'} deg (standby) | pursuit error ${d.car_error ?? '?'}`
       : `target ${d.overlay.target_deg ?? '?'} deg | ${d.detections.length} detection(s), none held`;
-    document.getElementById('camdetail').textContent =
-      `${d.detections.length} detection(s). Yellow dashes: stop size (safety_area). `
-      + `Red box: the target being chased. With no target the wall follower drives.`;
+    document.getElementById('camdetail').textContent = `${d.detections.length} detection(s)`;
     drawLidar(d.scan, d.overlay, !car);
     // Both controllers report a normalized -1..1 error, so one axis serves
     // the whole run and the band shows which one produced each sample.
