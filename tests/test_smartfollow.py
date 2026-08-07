@@ -164,21 +164,30 @@ def test_gap_follower_publishes_the_overlay(node, params):
     assert 'target_deg' in ov
 
 
-def test_stale_odometry_zeroes_the_throttle(node, params):
-    params['wall']['speed'] = 1.0
+def test_zero_speed_gains_hold_the_slider_command(node, params):
+    params['wall'].update(speed=0.4, speed_kp=0.0, speed_kd=0.0)
+    scan = make_scan(lambda deg: 3.5)
+    for _ in range(5):
+        node._enc_stamp = time.monotonic()
+        node._scan_cb(scan)
+    assert node._wall_speed_cmd == 0.4
+
+
+def test_stale_odometry_falls_back_to_the_slider_command(node, params):
+    params['wall'].update(speed=0.4, speed_kp=0.08, speed_kd=0.03)
     node._enc_stamp = time.monotonic() - 5.0
     node._scan_cb(make_scan(lambda deg: 3.5))
-    assert node._wall_speed_cmd == 0.0
+    assert node._wall_speed_cmd == 0.4
 
 
-def test_throttle_ramps_toward_the_target_speed(node, params):
-    params['wall']['speed'] = 1.0
-    scan = make_scan(lambda deg: 3.5)
+def test_speed_gains_trim_toward_the_road_target(node, params):
+    params['wall'].update(speed=1.0, speed_kp=0.08, speed_kd=0.03)
+    node._enc = 2.0  # measured speed above the road target: trim pulls down
+    scan = make_scan(lambda deg: 1.0)
     for _ in range(20):
         node._enc_stamp = time.monotonic()
         node._scan_cb(scan)
-    assert node._wall_speed_cmd > 0.0
-    assert node._wall_speed_cmd <= 1.0
+    assert node._wall_speed_cmd < 1.0
 
 
 # ---- car following ----
