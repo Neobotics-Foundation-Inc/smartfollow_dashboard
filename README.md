@@ -21,8 +21,8 @@ This is the [wallfollow](https://github.com/Neobotics-Foundation-Inc/wallfollow_
 On the car:
 
 ```
-git clone https://github.com/Neobotics-Foundation-Inc/smartfollow.git
-bash smartfollow/setup.sh
+git clone https://github.com/Neobotics-Foundation-Inc/smartfollow_dashboard.git
+bash smartfollow_dashboard/setup.sh
 ```
 
 setup.sh points neoracer-smartfollow.service at this checkout wherever it sits and copies nothing, so the repository can live anywhere the racecar user can read. A first install leaves the service stopped and disabled; start it with `bash setup.sh enable`. Dashboard: `http://<car-ip>:8085`.
@@ -110,7 +110,7 @@ The camera and the detections come from the driver's inference node, so it has t
 ```
 source /opt/ros/humble/setup.bash
 source /home/racecar/ros2_ws/install/setup.bash
-cd smartfollow && pytest -q
+cd smartfollow_dashboard && pytest -q
 ```
 
 ## Safety

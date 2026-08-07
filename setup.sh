@@ -2,8 +2,8 @@
 # Set up the Smart Follow Dashboard service on a stock Neoracer.
 #
 # On the car:
-#   git clone https://github.com/Neobotics-Foundation-Inc/smartfollow.git
-#   bash smartfollow/setup.sh
+#   git clone https://github.com/Neobotics-Foundation-Inc/smartfollow_dashboard.git
+#   bash smartfollow_dashboard/setup.sh
 #
 # The service runs the files where this repository already sits. setup.sh
 # writes that path into the unit and copies nothing, so the checkout can live
