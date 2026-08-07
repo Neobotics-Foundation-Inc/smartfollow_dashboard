@@ -21,8 +21,8 @@ This is the [wallfollow](https://github.com/Neobotics-Foundation-Inc/wallfollow_
 On the car:
 
 ```
-git clone https://github.com/Neobotics-Foundation-Inc/smartfollow.git
-bash smartfollow/setup.sh
+git clone https://github.com/Neobotics-Foundation-Inc/smartfollow_dashboard.git
+bash smartfollow_dashboard/setup.sh
 ```
 
 setup.sh points neoracer-smartfollow.service at this checkout wherever it sits and copies nothing, so the repository can live anywhere the racecar user can read. A first install leaves the service stopped and disabled; start it with `bash setup.sh enable`. Dashboard: `http://<car-ip>:8085`.
@@ -66,16 +66,17 @@ Handover is on the command only. The gap follower keeps regulating throttle agai
 
 ## Dashboard
 
-Left to right, top row:
+Top row, the two sensor views side by side at the same width, then the state box across the rest:
 
 - Lidar view: scan points, the search arc, the heading the gap follower picked, scroll to zoom. The heading dims while the car follower is driving, so the line the wall follower would have taken stays visible.
-- Camera view: detection boxes, the target in red, the yellow dashed stop size (safety_area), and the center line the steering chases.
+- Camera view: detection boxes, the target in red, the yellow dashed stop size (safety_area), and the center line the steering chases. It renders at the pursuit dashboard's width from the same 320 px preview, so it costs the browser no more than pursuit does.
 - State box: CAR FOLLOWING (red) or WALL FOLLOWING (blue), why, and the `target_hold` input.
 
-Below that:
+The state box carries the live error vs setpoint chart under it. Both controllers report a normalized -1 to +1 error, so one axis serves the whole run; the strip along the bottom is red where the car follower was driving. Yellow markers land at every parameter change. The chart is drawn from an even sample of the history rather than every row; the saved csv keeps all of them.
 
-- Live error vs setpoint chart. Both controllers report a normalized -1 to +1 error, so one axis serves the whole run; the strip along the bottom is red where the car follower was driving. Yellow markers land at every parameter change.
-- Tune panel: the wallfollow fields and the pursuit fields in their original order. Each has its own speed slider, applying live while dragging; the rest apply on Apply.
+Second row, full width:
+
+- Tune panel: the wallfollow fields and the pursuit fields in their original order, one group per column. Each has its own speed slider, applying live while dragging; the rest apply on Apply.
 - Save and Load write and read smartfollow.yaml on the car. Reset (top bar) re-reads the yaml.
 - Save log snapshots what is on the live chart to LogN.csv, including a state column. Load log defaults to the latest save, markers and the state strip included.
 
@@ -110,7 +111,7 @@ The camera and the detections come from the driver's inference node, so it has t
 ```
 source /opt/ros/humble/setup.bash
 source /home/racecar/ros2_ws/install/setup.bash
-cd smartfollow && pytest -q
+cd smartfollow_dashboard && pytest -q
 ```
 
 ## Safety
