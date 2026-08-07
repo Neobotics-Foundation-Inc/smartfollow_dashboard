@@ -63,6 +63,10 @@ HALF_CLEAR = 0.21    # meters, car half-width plus margin, inflates obstacles
 CENTER_BIAS = 0.006  # score penalty per degree off-center, stops ping-pong
 PUBLISH_RATE_HZ = 15.0  # arbiter and /drive rate
 PREVIEW_RATE_HZ = 15.0
+# The live chart is 420 px wide, so sending all 1200 rows of history on every
+# poll draws several samples into each pixel and costs more than the camera
+# stream does. Thin it to this many points; the log csv keeps every row.
+HIST_POINTS = 300
 
 # Tunable from the dashboard, in the order each panel shows them.
 WALL_KEYS = ('speed', 'kp', 'kd', 'speed_kp', 'speed_kd', 'window',
@@ -380,8 +384,26 @@ class SmartFollowNode(Node):
             _state.update({'state': 'car' if car else 'wall',
                            'since': round(age, 1) if age < 1e6 else None,
                            'error': round(error, 4), 'steer': round(steer, 3),
-                           'speed_cmd': round(speed, 3), 'hist': list(_hist),
+                           'speed_cmd': round(speed, 3), 'hist': _thin(_hist),
                            'marks': list(_marks), 'enc_speed': round(self._enc, 3)})
+
+
+def _thin(hist):
+    """Even sample of `hist` down to HIST_POINTS, newest row always kept.
+
+    The newest row carries the state the chart's band is drawn from, so it is
+    appended when the stride would have skipped it. A state flip shorter than
+    the stride can be missed; at 15 Hz that is under 0.3 s, and target_hold
+    holds a handover for longer than that.
+    """
+    rows = list(hist)
+    stride = max(1, len(rows) // HIST_POINTS)
+    if stride == 1:
+        return rows
+    sent = rows[::stride]
+    if sent[-1] is not rows[-1]:
+        sent.append(rows[-1])
+    return sent
 
 
 def _log_number(name):
