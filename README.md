@@ -76,7 +76,7 @@ The state box carries the live error vs setpoint chart under it. Both controller
 
 Second row, full width:
 
-- Tune panel: the wallfollow fields and the pursuit fields in their original order, one group per column. Each has its own speed slider, applying live while dragging; the rest apply on Apply.
+- Tune panel: the wallfollow fields and the pursuit fields in their original order, one group per column. Each has its own speed slider, applying live while dragging; the rest apply on Apply. A slider moves only with a sideways drag, never with a tap or a scroll that starts on it, and always shows the speed the car has.
 - Save and Load write and read smartfollow.yaml on the car. Reset (top bar) re-reads the yaml.
 - Save log snapshots what is on the live chart to LogN.csv, including a state column. Load log defaults to the latest save, markers and the state strip included.
 
