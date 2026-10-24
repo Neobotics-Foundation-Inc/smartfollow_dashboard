@@ -68,17 +68,19 @@ Handover is on the command only. The gap follower keeps regulating throttle agai
 
 Top row, the two sensor views side by side at the same width, then the state box across the rest:
 
-- Lidar view: scan points, the search arc, the heading the gap follower picked, scroll to zoom. The heading dims while the car follower is driving, so the line the wall follower would have taken stays visible.
-- Camera view: detection boxes, the target in red, the yellow dashed stop size (safety_area), and the center line the steering chases. It renders at the pursuit dashboard's width from the same 320 px preview, so it costs the browser no more than pursuit does.
-- State box: CAR FOLLOWING (red) or WALL FOLLOWING (blue), why, and the `target_hold` input.
+- Lidar view: scan points, the search arc, the heading the gap follower picked; zoom with the scroll wheel, two fingers, or the − and + buttons. The heading turns dashed while the car follower is driving, so the line the wall follower would have taken stays visible.
+- Camera view: detection boxes, the target in red, the yellow dashed stop size (safety_area), and the center line the steering chases. It draws from the same 320 px preview as pursuit, so it costs the browser no more than pursuit does.
+- State box: CAR FOLLOWING (white on black in the dark theme, the reverse in the light one) or WALL FOLLOWING (grey), why, and the `target_hold` input.
 
-The state box carries the live error vs setpoint chart under it. Both controllers report a normalized -1 to +1 error, so one axis serves the whole run; the strip along the bottom is red where the car follower was driving. Yellow markers land at every parameter change. The chart is drawn from an even sample of the history rather than every row; the saved csv keeps all of them.
+The state box carries the live error vs setpoint chart under it. Both controllers report a normalized -1 to +1 error, so one axis serves the whole run; the strip along the bottom is solid where the car follower was driving and grey where the wall follower was. Yellow markers land at every parameter change. The chart is drawn from an even sample of the history rather than every row; the saved csv keeps all of them.
 
 Second row, full width:
 
 - Tune panel: the wallfollow fields and the pursuit fields in their original order, one group per column. Each has its own speed slider, applying live while dragging; the rest apply on Apply.
 - Save and Load write and read smartfollow.yaml on the car. Reset (top bar) re-reads the yaml.
 - Save log snapshots what is on the live chart to LogN.csv, including a state column. Load log defaults to the latest save, markers and the state strip included.
+
+The page works with a mouse, a touch screen or the keyboard, on a laptop, a tablet or a phone, in a light or a dark theme (the switch in the top bar). The number fields have − and + buttons that repeat while held.
 
 ## Parameters
 
