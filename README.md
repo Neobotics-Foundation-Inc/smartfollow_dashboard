@@ -70,7 +70,7 @@ Top row, the two sensor views side by side at the same width, then the state box
 
 - Lidar view: scan points, the search arc, the heading the gap follower picked; zoom with the scroll wheel, two fingers, or the − and + buttons. The heading turns dashed while the car follower is driving, so the line the wall follower would have taken stays visible.
 - Camera view: detection boxes, the target in red, the yellow dashed stop size (safety_area), and the center line the steering chases. It draws from the same 320 px preview as pursuit, so it costs the browser no more than pursuit does.
-- State box: CAR FOLLOWING (white on black in the dark theme, the reverse in the light one) or WALL FOLLOWING (grey), why, and the `target_hold` input.
+- State box: CAR FOLLOWING (white on black in the dark theme, the reverse in the light one) or WALL FOLLOWING (grey), how long since the target was seen, and the `target_hold` input.
 
 The state box carries the live error vs setpoint chart under it. Both controllers report a normalized -1 to +1 error, so one axis serves the whole run; the strip along the bottom is solid where the car follower was driving and grey where the wall follower was. Yellow markers land at every parameter change. The chart is drawn from an even sample of the history rather than every row; the saved csv keeps all of them.
 
